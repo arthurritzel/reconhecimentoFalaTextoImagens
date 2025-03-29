@@ -374,7 +374,7 @@ packages:
     source: hosted
     version: "0.7.4"
   translator:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: translator
       sha256: "8f5e56d0ffb8f493b23ad0e4f824c17e5f43d45997e33b7c7b689c7a33cf3b06"

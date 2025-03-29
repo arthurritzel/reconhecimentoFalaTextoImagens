@@ -3,6 +3,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:language_detector/language_detector.dart';
+import 'package:translator/translator.dart';
 import 'dart:io';
 
 void main() {
@@ -17,7 +18,7 @@ class TextRecognitionApp extends StatelessWidget {
       title: 'Leitor de Texto Multilíngue',
       theme: ThemeData(
         primarySwatch: Colors.blue,
-        visualDensity: VisualDensity.adaptivePlatformDensity
+        visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
       home: TextRecognitionPage(),
     );
@@ -33,9 +34,27 @@ class _TextRecognitionPageState extends State<TextRecognitionPage> {
   File? _imageFile;
   String _recognizedText = 'Nenhum texto reconhecido ainda';
   String _detectedLanguage = 'Não detectado';
+  String ttsLanguage = 'pt-BR';
   late TextRecognizer _textRecognizer;
   final FlutterTts _flutterTts = FlutterTts();
   bool _isProcessing = false;
+  String _textoTraduzido = '';
+
+  String _targetLanguage = 'none';
+  final Map<String, String> _targetLanguages = {
+    'none': 'Sem tradução',
+    'pt': 'Português 🇧🇷',
+    'en': 'Inglês 🇺🇸',
+    'es': 'Espanhol 🇪🇸',
+    'fr': 'Francês 🇫🇷',
+    'de': 'Alemão 🇩🇪',
+    'it': 'Italiano 🇮🇹',
+    'ru': 'Russo 🇷🇺',
+    'ar': 'Árabe 🇸🇦',
+    'zh-cn': 'Chinês 🇨🇳',
+    'ja': 'Japonês 🇯🇵',
+    'ko': 'Coreano 🇰🇷',
+  };
 
   @override
   void initState() {
@@ -63,7 +82,7 @@ class _TextRecognitionPageState extends State<TextRecognitionPage> {
       });
 
       final pickedFile = await ImagePicker().pickImage(source: source);
-      
+
       if (pickedFile != null) {
         final imageFile = File(pickedFile.path);
         await _processImage(imageFile);
@@ -80,20 +99,22 @@ class _TextRecognitionPageState extends State<TextRecognitionPage> {
   Future<void> _processImage(File imageFile) async {
     try {
       final inputImage = InputImage.fromFile(imageFile);
-      final RecognizedText recognizedText = await _textRecognizer.processImage(inputImage);
-      
+      final RecognizedText recognizedText = await _textRecognizer.processImage(
+        inputImage,
+      );
+
       setState(() {
         _imageFile = imageFile;
-        _recognizedText = recognizedText.text.isEmpty 
-            ? 'Nenhum texto encontrado' 
-            : recognizedText.text;
+        _recognizedText =
+            recognizedText.text.isEmpty
+                ? 'Nenhum texto encontrado'
+                : recognizedText.text;
       });
 
       // Detectar idioma
       await _detectLanguage(_recognizedText);
 
-      // Configurar TTS para o idioma detectado
-      await _configureTextToSpeech(_detectedLanguage);
+      await _configureTextToSpeech(_detectedLanguage, _recognizedText);
 
       await _speakText(_recognizedText);
     } catch (e) {
@@ -143,7 +164,10 @@ class _TextRecognitionPageState extends State<TextRecognitionPage> {
     return languageNames[languageCode] ?? languageCode;
   }
 
-  Future<void> _configureTextToSpeech(String language) async {
+  Future<void> _configureTextToSpeech(
+    String language,
+    String reconizedText,
+  ) async {
     final Map<String, String> languageToTTSMap = {
       'Português': 'pt-BR',
       'Inglês': 'en-US',
@@ -158,8 +182,8 @@ class _TextRecognitionPageState extends State<TextRecognitionPage> {
       'Coreano': 'ko-KR',
     };
 
-    final ttsLanguage = languageToTTSMap[language] ?? 'pt-BR';
-    
+    ttsLanguage = languageToTTSMap[language] ?? 'pt-BR';
+
     await _flutterTts.setLanguage(ttsLanguage);
   }
 
@@ -168,6 +192,26 @@ class _TextRecognitionPageState extends State<TextRecognitionPage> {
       await _flutterTts.setVolume(1.0);
       text = text.replaceAll('\n', ' ');
       text = text.replaceAll(RegExp(r'\s+'), ' ');
+
+      String fromTranslationLang = ttsLanguage.split('-')[0];
+
+      if (_targetLanguage != "none" && _targetLanguage != fromTranslationLang) {
+        final translator = GoogleTranslator();
+        var translation = await translator.translate(
+          text,
+          from: fromTranslationLang,
+          to: _targetLanguage,
+        );
+        text = translation.text;
+        await _flutterTts.setLanguage(_targetLanguage);
+        setState(() {
+          _textoTraduzido = translation.text;
+        });
+      } else {
+        _textoTraduzido = '';
+        await _flutterTts.setLanguage(ttsLanguage);
+      }
+
       await _flutterTts.speak(text);
     }
   }
@@ -175,28 +219,51 @@ class _TextRecognitionPageState extends State<TextRecognitionPage> {
   void _showErrorDialog(String message) {
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Erro'),
-        content: Text(message),
-        actions: <Widget>[
-          TextButton(
-            child: Text('OK'),
-            onPressed: () {
-              Navigator.of(ctx).pop();
-            },
-          )
-        ],
-      ),
+      builder:
+          (ctx) => AlertDialog(
+            title: Text('Erro'),
+            content: Text(message),
+            actions: <Widget>[
+              TextButton(
+                child: Text('OK'),
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                },
+              ),
+            ],
+          ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      
       appBar: AppBar(
-        title: Text('Leitor de Texto Multilíngue'),
+        title: Text('Leitor de Texto Multilíngue', style: TextStyle(fontSize: 18),),
         centerTitle: true,
+        actions: [
+          Padding(
+            padding: EdgeInsets.only(right: 16.0),
+            child: DropdownButton<String>(
+              value: _targetLanguage,
+              items:
+                  _targetLanguages.entries.map((entry) {
+                    return DropdownMenuItem<String>(
+                      value: entry.key,
+                      child: Text(entry.value),
+                    );
+                  }).toList(),
+              style: TextStyle(color: Colors.black),
+              onChanged: (String? newValue) {
+                setState(() {
+                  _targetLanguage = newValue!;
+                  _textoTraduzido = '';
+                  _speakText(_recognizedText);
+                });
+              },
+            ),
+          ),
+        ],
       ),
       body: Center(
         child: SingleChildScrollView(
@@ -204,43 +271,101 @@ class _TextRecognitionPageState extends State<TextRecognitionPage> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: <Widget>[
               _imageFile != null
-                  ? Image.file(
+                ? Container(
+                    constraints: BoxConstraints(
+                      maxHeight: 400,
+                      maxWidth: MediaQuery.of(context).size.width * 0.9,
+                    ),
+                    child: Image.file(
                       _imageFile!,
-                      height: 300,
-                      width: 300,
-                      fit: BoxFit.cover,
-                    )
-                  : Text('Nenhuma imagem selecionada'),
-              
+                      fit: BoxFit.contain,
+                    ),
+                  )
+                : Text('Nenhuma imagem selecionada'),
+
               SizedBox(height: 20),
               _imageFile != null
                   ? Text(
-                      'Idioma Detectado: $_detectedLanguage',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blue,
-                      ),
-                    )
+                    'Idioma Detectado: $_detectedLanguage',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue,
+                    ),
+                  )
                   : Container(),
-              
+
               _imageFile != null
                   ? Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                  child: Card(
+                    elevation: 2,
+                    color: Colors.blue.shade50,
+                    child: Padding(
                       padding: const EdgeInsets.all(16.0),
-                      child: Text(
-                        _recognizedText,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Texto reconhecido:',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: Colors.blue.shade800,
+                            ),
+                          ),
+                          SizedBox(height: 8),
+                          _recognizedText.isEmpty
+                              ? Center(child: CircularProgressIndicator())
+                              : Text(
+                                  _recognizedText,
+                                  style: TextStyle(fontSize: 16),
+                                ),
+                        ],
                       ),
-                    )
+                    ),
+                  ),
+                )
                   : Container(),
-              
-              
+
+              _textoTraduzido != '' && _imageFile != null
+                  ? Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                  child: Card(
+                    elevation: 2,
+                    color: Colors.blue.shade50,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Tradução (${_targetLanguages[_targetLanguage]}):',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: Colors.blue.shade800,
+                            ),
+                          ),
+                          SizedBox(height: 8),
+                          _textoTraduzido.isEmpty
+                              ? Center(child: CircularProgressIndicator())
+                              : Text(
+                                  _textoTraduzido,
+                                  style: TextStyle(fontSize: 16),
+                                ),
+                        ],
+                      ),
+                    ),
+                  ),
+                )
+                  : Container(),
+
               SizedBox(height: 20),
               ElevatedButton.icon(
-                onPressed: () =>{_speakText(_recognizedText)}, 
-                label: Text("Falar de novo"), 
-                icon: Icon(Icons.refresh)
+                onPressed: () => {_speakText(_recognizedText)},
+                label: Text("Falar de novo"),
+                icon: Icon(Icons.refresh),
               ),
               SizedBox(height: 20),
               Row(
@@ -250,9 +375,15 @@ class _TextRecognitionPageState extends State<TextRecognitionPage> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.blue,
                     ),
-                    icon: Icon(Icons.camera_alt, color: Colors.white,),
-                    label: Text('Câmera', style: TextStyle(color: Colors.white)),
-                    onPressed: _isProcessing ? null : () => _pickImage(ImageSource.camera),
+                    icon: Icon(Icons.camera_alt, color: Colors.white),
+                    label: Text(
+                      'Câmera',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                    onPressed:
+                        _isProcessing
+                            ? null
+                            : () => _pickImage(ImageSource.camera),
                   ),
                   SizedBox(width: 20),
                   ElevatedButton.icon(
@@ -260,12 +391,19 @@ class _TextRecognitionPageState extends State<TextRecognitionPage> {
                       backgroundColor: Colors.blue,
                     ),
                     icon: Icon(Icons.photo_library, color: Colors.white),
-                    label: Text('Galeria', style: TextStyle(color: Colors.white)),
-                    onPressed: _isProcessing ? null : () => _pickImage(ImageSource.gallery),
+                    label: Text(
+                      'Galeria',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                    onPressed:
+                        _isProcessing
+                            ? null
+                            : () => _pickImage(ImageSource.gallery),
                   ),
                 ],
               ),
-              
+              SizedBox(height: 50),
+
               if (_isProcessing)
                 Padding(
                   padding: const EdgeInsets.all(16.0),
